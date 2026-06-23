@@ -1,0 +1,27 @@
+[package]
+name = "brain"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/brain.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+jiff = { workspace = true, features = ["serde"] }
+minijinja = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1.52.3", features = ["rt", "sync"] }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["serde", "v4", "v7"] }
+
+[features]
+test-harness = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }

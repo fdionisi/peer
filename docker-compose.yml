@@ -1,0 +1,13 @@
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v3.1.5
+    container_name: brain-surrealdb
+    ports:
+      - "8000:8000"
+    command: start --user root --pass root
+    volumes:
+      - brain-surrealdb-data:/data
+    restart: unless-stopped
+
+volumes:
+  brain-surrealdb-data:

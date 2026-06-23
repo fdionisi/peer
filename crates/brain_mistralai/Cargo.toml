@@ -1,0 +1,24 @@
+[package]
+name = "brain_mistralai"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+brain = { workspace = true }
+futures = { workspace = true }
+reqwest = { workspace = true, features = ["json", "stream"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+brain_prompts_embedded = { workspace = true }
+jiff = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

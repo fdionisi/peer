@@ -1,0 +1,26 @@
+[package]
+name = "brain_cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "brain"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+brain = { workspace = true }
+brain_exa = { workspace = true }
+brain_mistralai = { workspace = true }
+brain_prompts_embedded = { workspace = true }
+brain_surrealdb = { workspace = true }
+crossterm = { workspace = true }
+futures = { workspace = true }
+jiff = { workspace = true }
+ratatui = { workspace = true }
+surrealdb = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+tracing = { workspace = true }
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tui-markdown = { workspace = true }
