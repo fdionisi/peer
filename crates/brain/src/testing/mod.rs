@@ -4,5 +4,6 @@ pub mod language_model;
 pub mod memory_index;
 pub mod prompt_registry;
 pub mod summarizer;
+pub mod tool_index;
 pub mod tool_registry;
 pub mod topic_detector;

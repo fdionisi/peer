@@ -2,11 +2,15 @@ use std::sync::Arc;
 
 use brain::{
     conversation_store::ConversationStore,
+    embedder::Embedder,
     memory_index::MemoryIndex,
     models::{
         message::{Content, Message, MessageId, Role},
         summary::Summary,
     },
+    testing::tool_registry::MockToolRegistry,
+    tool::{Policy, ToolOutput},
+    tool_index::ToolIndex,
 };
 use brain_surrealdb::{EMBED_DIMENSION, SurrealDbClient, default_migrations_dir};
 use jiff::Timestamp;
@@ -297,7 +301,9 @@ async fn memory_index_search_finds_indexed_conversation() {
         .await
         .unwrap();
 
-    let results = test.store().search(embedding, 5, None).await.unwrap();
+    let results = MemoryIndex::search(test.store().as_ref(), embedding, 5, None)
+        .await
+        .unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, conv.id);
     // Identical vectors have cosine similarity 1.0.
@@ -326,7 +332,9 @@ async fn memory_index_nearer_vector_outranks_farther() {
         .unwrap();
 
     // Query on dimension 0 — conv_a should be the best match.
-    let results = test.store().search(unit_vec(0), 5, None).await.unwrap();
+    let results = MemoryIndex::search(test.store().as_ref(), unit_vec(0), 5, None)
+        .await
+        .unwrap();
     assert!(
         results.len() >= 2,
         "expected both conversations, got {}",
@@ -370,9 +378,7 @@ async fn memory_index_search_honours_exclude() {
         .unwrap();
 
     // Exclude the only indexed conversation — result set must be empty.
-    let results = test
-        .store()
-        .search(embedding, 5, Some(conv.id))
+    let results = MemoryIndex::search(test.store().as_ref(), embedding, 5, Some(conv.id))
         .await
         .unwrap();
     assert!(
@@ -406,4 +412,149 @@ async fn memory_index_record_recall_is_idempotent() {
         "idempotent call must not duplicate the edge"
     );
     assert_eq!(recalled[0], to.id);
+}
+
+// ── ToolIndex tests ─────────────────────────────────────────────────────────
+
+/// A mock embedder that produces a deterministic unit vector per text input,
+/// so tests can control similarity without a real embedding model.
+///
+/// The vector is 1024-dim with a single hot dimension chosen by hashing the
+/// text. Two inputs that hash to the same dimension produce cosine = 1.0;
+/// different dimensions produce cosine = 0.0. This mirrors the `unit_vec`
+/// helper used by the MemoryIndex tests.
+struct HashingMockEmbedder;
+
+#[async_trait::async_trait]
+impl Embedder for HashingMockEmbedder {
+    async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        let hot = (Hasher::finish(&hasher) as usize) % EMBED_DIMENSION;
+        Ok(unit_vec(hot))
+    }
+}
+
+fn hidden_registry_with(name: &str, description: &str) -> MockToolRegistry {
+    MockToolRegistry::new().register_hidden(
+        name,
+        description,
+        Policy::Auto,
+        vec![ToolOutput {
+            text: "ok".to_string(),
+            is_error: false,
+        }],
+    )
+}
+
+#[tokio::test]
+async fn tool_index_search_finds_indexed_hidden_tool() {
+    let test = setup().await;
+    let registry = hidden_registry_with("desktop_click", "Click an element via AX press.");
+    let embedder = HashingMockEmbedder;
+
+    test.store().index(&registry, &embedder).await.unwrap();
+
+    // Search with the same text the index used — the embedder is deterministic,
+    // so the query vector matches the stored vector exactly (cosine = 1.0).
+    let query = embedder
+        .embed("desktop_click\nClick an element via AX press.")
+        .await
+        .unwrap();
+    let results = ToolIndex::search(test.store().as_ref(), query, 5)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "desktop_click");
+    assert!((results[0].score - 1.0).abs() < 1e-4);
+}
+
+#[tokio::test]
+async fn tool_index_search_returns_top_k_ordered_by_descending_score() {
+    let test = setup().await;
+    let registry = MockToolRegistry::new()
+        .register_hidden("a", "alpha", Policy::Auto, vec![])
+        .register_hidden("b", "beta", Policy::Auto, vec![])
+        .register_hidden("c", "gamma", Policy::Auto, vec![]);
+    let embedder = HashingMockEmbedder;
+
+    test.store().index(&registry, &embedder).await.unwrap();
+
+    // Query with tool "a"'s exact embedding text — "a" should rank first.
+    let query = embedder.embed("a\nalpha").await.unwrap();
+    let results = ToolIndex::search(test.store().as_ref(), query, 2)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].name, "a");
+    assert!(results[0].score >= results[1].score);
+}
+
+#[tokio::test]
+async fn tool_index_search_with_zero_k_returns_empty() {
+    let test = setup().await;
+    let registry = hidden_registry_with("solo", "the only hidden tool");
+    let embedder = HashingMockEmbedder;
+
+    test.store().index(&registry, &embedder).await.unwrap();
+
+    let results = ToolIndex::search(test.store().as_ref(), vec![0.0; EMBED_DIMENSION], 0)
+        .await
+        .unwrap();
+    assert!(results.is_empty());
+}
+
+#[tokio::test]
+async fn tool_index_search_before_index_returns_empty() {
+    let test = setup().await;
+    let results = ToolIndex::search(test.store().as_ref(), vec![0.0; EMBED_DIMENSION], 5)
+        .await
+        .unwrap();
+    assert!(results.is_empty());
+}
+
+#[tokio::test]
+async fn tool_index_reindex_replaces_previous_entries() {
+    let test = setup().await;
+    let embedder = HashingMockEmbedder;
+
+    let first = hidden_registry_with("old_tool", "the old hidden tool");
+    test.store().index(&first, &embedder).await.unwrap();
+
+    let second = hidden_registry_with("new_tool", "the new hidden tool");
+    test.store().index(&second, &embedder).await.unwrap();
+
+    let query = embedder
+        .embed("new_tool\nthe new hidden tool")
+        .await
+        .unwrap();
+    let results = ToolIndex::search(test.store().as_ref(), query, 10)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "new_tool");
+}
+
+#[tokio::test]
+async fn tool_index_only_indexes_hidden_tools() {
+    let test = setup().await;
+    let registry = MockToolRegistry::new()
+        .register_hidden("hidden_one", "A hidden tool.", Policy::Auto, vec![])
+        .register("visible_one", "A visible tool.", Policy::Auto, vec![]);
+    let embedder = HashingMockEmbedder;
+
+    test.store().index(&registry, &embedder).await.unwrap();
+
+    // A broad query should only ever return the hidden tool.
+    let query = embedder.embed("hidden_one\nA hidden tool.").await.unwrap();
+    let results = ToolIndex::search(test.store().as_ref(), query, 10)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "hidden_one");
 }

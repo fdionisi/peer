@@ -6,9 +6,8 @@ use async_trait::async_trait;
 
 use crate::tool::{Policy, ToolDefinition, ToolOutput, ToolRegistry, Visibility};
 
-/// A scripted tool registry for tests. Callers register named tools with their
-/// policy and a canned `ToolOutput`; the registry replays those outputs in
-/// order on successive `execute` calls for each tool name.
+/// A scripted tool registry for tests. Registers named tools with canned
+/// outputs replayed in order on successive `execute` calls.
 pub struct MockToolRegistry {
     definitions: Vec<ToolDefinition>,
     policies: HashMap<String, Policy>,
@@ -29,13 +28,7 @@ impl MockToolRegistry {
         }
     }
 
-    /// Register a tool with the given policy and a queue of canned outputs.
-    /// Each `execute` call pops the first output; once exhausted, subsequent
-    /// calls return an error.
-    ///
-    /// Registered tools are [`Visibility::Visible`] by default so existing
-    /// tests keep seeing their tools in the default list; use
-    /// [`MockToolRegistry::register_hidden`] for hidden tools.
+    /// Registers a visible tool with canned outputs.
     pub fn register(
         mut self,
         name: &str,
@@ -54,7 +47,7 @@ impl MockToolRegistry {
         self
     }
 
-    /// Register a tool that is omitted from the default tool list.
+    /// Registers a hidden tool with canned outputs.
     pub fn register_hidden(
         mut self,
         name: &str,
@@ -73,6 +66,7 @@ impl MockToolRegistry {
         self
     }
 
+    /// Registers a tool with an explicit visibility.
     pub fn register_with_visibility(
         mut self,
         name: &str,

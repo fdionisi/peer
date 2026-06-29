@@ -2,12 +2,15 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use brain::{
     conversation_store::ConversationStore,
+    embedder::Embedder,
     memory_index::{MemoryIndex, RelatedConversation},
     models::{
         conversation::{Conversation, ConversationId, ConversationItem},
         message::{Content, Message, MessageId, Role},
         summary::Summary,
     },
+    tool::{ToolRegistry, Visibility},
+    tool_index::{DiscoveredTool, ToolIndex},
 };
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
@@ -435,7 +438,6 @@ impl ConversationStore for SurrealDbClient {
     }
 
     async fn resolve_branch(&self, child_id: ConversationId, payload: Vec<Message>) -> Result<()> {
-        // Validate before opening the transaction.
         let child = self
             .get(child_id)
             .await?
@@ -451,12 +453,8 @@ impl ConversationStore for SurrealDbClient {
 
         let now = Self::timestamp_to_string(Timestamp::now());
 
-        // Build the atomic transaction. Values are serialised as JSON string
-        // literals directly in the SQL, which lets us batch an arbitrary number
-        // of statements without fighting the driver's typed-binding API.
         let mut sql = String::from("BEGIN TRANSACTION;\n");
 
-        // Insert each payload message and relate it to the parent.
         for message in &payload {
             let msg_id = message.id.as_uuid();
             let role_str = match message.role {
@@ -642,5 +640,76 @@ impl SurrealDbClient {
         }
 
         Ok(result)
+    }
+}
+
+fn tool_embedding_text(name: &str, description: &str) -> String {
+    format!("{}\n{}", name, description)
+}
+
+#[derive(Debug, Serialize, Deserialize, SurrealValue)]
+struct ToolRow {
+    name: String,
+    #[serde(default)]
+    score: Option<f32>,
+}
+
+#[async_trait]
+impl ToolIndex for SurrealDbClient {
+    async fn index(&self, registry: &dyn ToolRegistry, embedder: &dyn Embedder) -> Result<()> {
+        self.db.query("DELETE tool").await?;
+
+        for definition in registry.definitions() {
+            if registry.visibility(&definition.name) != Some(Visibility::Hidden) {
+                continue;
+            }
+
+            let text = tool_embedding_text(&definition.name, &definition.description);
+            let embedding = embedder.embed(&text).await?;
+
+            self.db
+                .query(
+                    r#"
+                    CREATE tool SET
+                        name = $name,
+                        embedding = $embedding
+                    "#,
+                )
+                .bind(("name", definition.name.clone()))
+                .bind(("embedding", embedding))
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn search(&self, query: Vec<f32>, k: usize) -> Result<Vec<DiscoveredTool>> {
+        if k == 0 {
+            return Ok(Vec::new());
+        }
+
+        let surql = format!(
+            r#"
+            SELECT name,
+                   vector::similarity::cosine(embedding, $query) AS score
+            FROM tool
+            WHERE embedding IS NOT NULL
+              AND embedding <|{k}, 150|> $query
+            ORDER BY score DESC
+            "#
+        );
+
+        let mut response = self.db.query(&surql).bind(("query", query)).await?;
+        let rows: Vec<ToolRow> = response.take(0)?;
+
+        rows.into_iter()
+            .map(|r| {
+                let score = r.score.unwrap_or(0.0).clamp(0.0, 1.0);
+                Ok(DiscoveredTool {
+                    name: r.name,
+                    score,
+                })
+            })
+            .collect()
     }
 }
