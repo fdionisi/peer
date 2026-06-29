@@ -11,7 +11,10 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+async-stream = { workspace = true }
 async-trait = { workspace = true }
+brain = { workspace = true, features = ["test-harness"] }
 brain_mistralai = { workspace = true }
 brain_prompts_embedded = { workspace = true }
+futures = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }

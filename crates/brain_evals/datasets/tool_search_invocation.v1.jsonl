@@ -1,0 +1,2 @@
+{"id": "needs-hidden-tool", "user_message": "Read the file at /etc/hosts and show me its contents", "expect": {"first_tool_call": "tool_search"}}
+{"id": "visible-tool-suffices", "user_message": "Search the web for Rust async traits", "expect": {"first_tool_call": "web_search"}}

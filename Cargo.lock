@@ -535,10 +535,12 @@ name = "brain_evals"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "async-trait",
  "brain",
  "brain_mistralai",
  "brain_prompts_embedded",
+ "futures",
  "jiff",
  "serde",
  "serde_json",

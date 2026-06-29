@@ -12,6 +12,7 @@ pub mod topic_detector;
 
 pub mod tool;
 pub mod tool_index;
+pub mod tool_search;
 
 #[cfg(any(test, feature = "test-harness"))]
 pub mod testing;

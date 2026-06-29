@@ -637,7 +637,6 @@ async fn auto_tool_executes_and_loop_continues() {
     let store = Arc::new(InMemoryConversationStore::new());
     let conv_id = setup(&store, vec![]).await;
 
-    // Turn 1: tool call, then turn 2: plain text after the result.
     let llm = Arc::new(MockLanguageModel::with_turns(
         1000,
         vec![
@@ -793,7 +792,6 @@ async fn confirm_tool_opens_resolution_thread_and_writes_nothing_to_parent() {
                 name: "send_email".to_string(),
                 input: serde_json::json!({ "to": "alice@example.com" }),
             })],
-            // The question the model asks:
             vec![AssistantEvent::Text(
                 "About to send email. Shall I proceed?".to_string(),
             )],

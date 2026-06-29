@@ -5,8 +5,7 @@ use anyhow::{Context, Result};
 use brain::conversation_store::ConversationStore;
 use brain::models::message::{Content, Role};
 use brain::{
-    Brain, InputStream,
-    tool::{EmptyToolRegistry, StaticToolRegistry},
+    Brain, InputStream, tool::StaticToolRegistry, tool_index::ToolIndex, tool_search::ToolSearch,
 };
 use brain_exa::{ExaConfig, ExaWebSearch};
 use brain_mistralai::{MistralClient, MistralConfig};
@@ -333,15 +332,30 @@ async fn main() -> Result<()> {
     let prompts: Arc<dyn brain::prompts::PromptRegistry> = Arc::new(EmbeddedPromptRegistry::new());
     let client = Arc::new(MistralClient::new(mistral_config, prompts)?);
 
+    let hidden_definitions: Vec<brain::tool::ToolDefinition> = Vec::new();
+    let tool_search = ToolSearch::new(
+        client.clone() as Arc<dyn brain::embedder::Embedder>,
+        store.clone() as Arc<dyn ToolIndex>,
+        hidden_definitions,
+    );
+
     let tool_registry: Arc<dyn brain::tool::ToolRegistry> = match config.exa_api_key {
-        Some(key) => Arc::new(StaticToolRegistry::new(vec![Box::new(ExaWebSearch::new(
-            ExaConfig::new(key),
-        )?)])),
+        Some(key) => Arc::new(StaticToolRegistry::new(vec![
+            Box::new(ExaWebSearch::new(ExaConfig::new(key))?),
+            Box::new(tool_search),
+        ])),
         None => {
             tracing::warn!("EXA_API_KEY not set — starting without web search tool");
-            Arc::new(EmptyToolRegistry)
+            Arc::new(StaticToolRegistry::new(vec![Box::new(tool_search)]))
         }
     };
+
+    ToolIndex::index(
+        &*store,
+        &*tool_registry,
+        &*client as &dyn brain::embedder::Embedder,
+    )
+    .await?;
 
     let brain = Arc::new(Brain::new(
         store.clone(),

@@ -37,6 +37,7 @@
 pub mod dataset;
 pub mod drift;
 pub mod report;
+pub mod tool_search;
 
 pub use dataset::Dataset;
 pub use report::{Report, RunMetadata};

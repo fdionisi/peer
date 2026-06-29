@@ -487,7 +487,6 @@ mod tests {
         assert_eq!(metrics.false_negatives, 1);
         assert_eq!(metrics.true_negatives, 1);
 
-        // precision = 2 / (2 + 1), recall = 2 / (2 + 1)
         assert!((metrics.precision - 2.0 / 3.0).abs() < 1e-9);
         assert!((metrics.recall - 2.0 / 3.0).abs() < 1e-9);
         assert!((metrics.f1 - 2.0 / 3.0).abs() < 1e-9);

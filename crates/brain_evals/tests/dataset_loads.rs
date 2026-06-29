@@ -7,6 +7,7 @@ use std::path::Path;
 
 use brain_evals::Dataset;
 use brain_evals::drift::DriftCase;
+use brain_evals::tool_search::ToolSearchCase;
 
 fn dataset_path(name: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -50,4 +51,43 @@ fn detect_topic_shift_v1_parses_and_is_consistent() {
             );
         }
     }
+}
+
+#[test]
+fn tool_search_invocation_v1_parses_and_is_consistent() {
+    let dataset: Dataset<ToolSearchCase> =
+        Dataset::load(dataset_path("tool_search_invocation.v1.jsonl"))
+            .expect("dataset should parse");
+
+    assert_eq!(dataset.action, "tool_search_invocation");
+    assert_eq!(dataset.version, "v1");
+    assert!(!dataset.is_empty(), "dataset must not be empty");
+
+    for case in &dataset.cases {
+        assert!(
+            !case.expect.first_tool_call.is_empty(),
+            "case '{}' has no expected first_tool_call",
+            case.id
+        );
+        assert!(
+            !case.user_message.is_empty(),
+            "case '{}' has no user_message",
+            case.id
+        );
+    }
+
+    let positives = dataset
+        .cases
+        .iter()
+        .filter(|c| c.expect.first_tool_call == "tool_search")
+        .count();
+    let negatives = dataset.len() - positives;
+    assert!(
+        positives > 0,
+        "dataset must contain tool_search-positive cases"
+    );
+    assert!(
+        negatives > 0,
+        "dataset must contain tool_search-negative cases"
+    );
 }

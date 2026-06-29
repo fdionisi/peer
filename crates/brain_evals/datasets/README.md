@@ -12,9 +12,17 @@ Format is JSON Lines: one case per line. Blank lines and lines beginning with
 
 ## detect_topic_shift
 
-One case per line, deserialised into `drift::DriftCase`.
+Deserialised into `drift::DriftCase`. Each case is a conversation (a sequence
+of turns) plus whether the topic shifted and, if so, at which turn index the
+new topic begins. The two error modes are not equally expensive: a spurious
+split fragments a coherent conversation and writes a noisy summary into the
+recall index, so the dataset is deliberately biased toward stay cases to keep
+precision honest.
 
-```jsonc
-# detect_topic_shift.v1 — drift detection golden set
-{"id": "stays-on-topic-01", "turns": [{"role": "user", "text": "How do I index a Vec in Rust?"}, {"role": "assistant", "text": "Use square brackets, e.g. v[0]."}, {"role": "user", "text": "And how do I get its length?"}], "expect": {"shifted": false}, "notes": "follow-up on the same subject"}
-{"id": "clear-shift-01", "turns": [{"role": "user", "text": "How do I index a Vec in Rust?"}, {"role": "assistant", "text": "Use square brackets."}, {"role": "user", "text": "Different
+## tool_search_invocation
+
+Deserialised into `tool_search::ToolSearchCase`. Each case is a single user
+message plus the tool the model should call first. The positive case must
+request a capability the model provably lacks (e.g. filesystem access), so
+discovery is the only rational path; a request the model can satisfy natively
+gives it no reason to search.

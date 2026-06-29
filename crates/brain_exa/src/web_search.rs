@@ -181,8 +181,6 @@ mod tests {
         ExaWebSearch::new(ExaConfig::new("test-key")).expect("client construction failed")
     }
 
-    // ── Offline: metadata ────────────────────────────────────────────────────
-
     #[test]
     fn name_is_web_search() {
         assert_eq!(tool().name(), "web_search");
@@ -210,8 +208,6 @@ mod tests {
         assert_eq!(def.input_schema, t.input_schema());
     }
 
-    // ── Offline: request shape ───────────────────────────────────────────────
-
     #[test]
     fn search_request_serialises_query_and_contents() {
         let req = SearchRequest {
@@ -234,8 +230,6 @@ mod tests {
             ExaWebSearch::new(ExaConfig::new("k").with_base_url("https://api.exa.ai/")).unwrap();
         assert_eq!(t.endpoint(), "https://api.exa.ai/search");
     }
-
-    // ── Offline: response rendering ──────────────────────────────────────────
 
     #[test]
     fn render_results_emits_title_url_and_snippet_per_result() {
@@ -313,8 +307,6 @@ mod tests {
         assert_eq!(parsed.results[0].highlights.as_deref().unwrap()[0], "h1");
         assert!(parsed.results[0].summary.is_none());
     }
-
-    // ── Live (requires EXA_API_KEY) ──────────────────────────────────────────
 
     /// Calls the real Exa `/search` endpoint with a stable query and asserts a
     /// non-empty result set. Run with:
