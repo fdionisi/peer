@@ -18,6 +18,21 @@ pub enum Policy {
     Confirm,
 }
 
+/// Whether a tool is surfaced to the model in the default tool list.
+///
+/// `Visible` tools are included in the definitions sent to the language model
+/// at the start of every turn. `Hidden` tools are registered and callable, but
+/// omitted from the default list — they are intended to be surfaced on demand
+/// through a discovery mechanism (e.g. `tool_search`) rather than declared up
+/// front. The default is `Hidden` so that adding a tool never silently grows
+/// the model's context; tools opt into always-on visibility explicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Visibility {
+    Visible,
+    #[default]
+    Hidden,
+}
+
 /// The result of executing a tool.
 ///
 /// `is_error` feeds `Content::ToolResult.is_error` — it tells the model whether
@@ -48,10 +63,15 @@ pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn input_schema(&self) -> serde_json::Value;
+    async fn execute(&self, input: serde_json::Value) -> Result<ToolOutput>;
+
     fn policy(&self) -> Policy {
         Policy::Auto
     }
-    async fn execute(&self, input: serde_json::Value) -> Result<ToolOutput>;
+
+    fn visibility(&self) -> Visibility {
+        Visibility::Hidden
+    }
 
     /// Assemble the three metadata methods into a `ToolDefinition` for the
     /// language model. Provided so adapters and the registry never rebuild it
@@ -63,6 +83,12 @@ pub trait Tool: Send + Sync {
             input_schema: self.input_schema(),
         }
     }
+
+    /// Whether this tool is surfaced in the default tool list. Convenience
+    /// default so callers can ask without re-implementing the trait method.
+    fn is_visible(&self) -> bool {
+        matches!(self.visibility(), Visibility::Visible)
+    }
 }
 
 /// Looks up tools by name. A static list of tools at startup is enough for now;
@@ -72,10 +98,27 @@ pub trait Tool: Send + Sync {
 #[async_trait]
 pub trait ToolRegistry: Send + Sync {
     fn names(&self) -> Vec<String>;
+    /// Every registered tool's definition, regardless of visibility.
+    ///
+    /// Callers that want only the model-facing default list should use
+    /// [`ToolRegistry::visible_definitions`]; this method is the full inventory
+    /// and is intended for discovery, listing, and indexing.
     fn definitions(&self) -> Vec<ToolDefinition>;
+    /// The subset of definitions for tools whose [`Tool::visibility`] is
+    /// [`Visibility::Visible`]. These are the tools sent to the language model
+    /// at the start of every turn.
+    fn visible_definitions(&self) -> Vec<ToolDefinition> {
+        self.definitions()
+            .into_iter()
+            .filter(|d| self.visibility(&d.name) == Some(Visibility::Visible))
+            .collect()
+    }
     /// The orchestrator needs the policy without executing — to decide whether
     /// to open a confirmation thread or just run the tool.
     fn policy(&self, name: &str) -> Option<Policy>;
+    /// The visibility of a named tool, mirroring [`Tool::visibility`]. Returns
+    /// `None` when the tool is not registered.
+    fn visibility(&self, name: &str) -> Option<Visibility>;
     async fn execute(&self, name: &str, input: serde_json::Value) -> Result<ToolOutput>;
 }
 
@@ -110,6 +153,13 @@ impl ToolRegistry for StaticToolRegistry {
             .map(|t| t.policy())
     }
 
+    fn visibility(&self, name: &str) -> Option<Visibility> {
+        self.tools
+            .iter()
+            .find(|t| t.name() == name)
+            .map(|t| t.visibility())
+    }
+
     async fn execute(&self, name: &str, input: serde_json::Value) -> Result<ToolOutput> {
         let tool = self
             .tools
@@ -135,6 +185,10 @@ impl ToolRegistry for EmptyToolRegistry {
     }
 
     fn policy(&self, _name: &str) -> Option<Policy> {
+        None
+    }
+
+    fn visibility(&self, _name: &str) -> Option<Visibility> {
         None
     }
 
@@ -191,5 +245,43 @@ mod tests {
     fn default_policy_is_auto() {
         let tool = EchoTool;
         assert_eq!(tool.policy(), Policy::Auto);
+    }
+
+    #[test]
+    fn default_visibility_is_hidden() {
+        let tool = EchoTool;
+        assert_eq!(tool.visibility(), Visibility::Hidden);
+        assert!(!tool.is_visible());
+    }
+
+    #[test]
+    fn visible_definitions_filters_by_visibility() {
+        struct VisibleEcho;
+        #[async_trait]
+        impl Tool for VisibleEcho {
+            fn name(&self) -> &str {
+                "visible_echo"
+            }
+            fn description(&self) -> &str {
+                "A visible echo."
+            }
+            fn input_schema(&self) -> serde_json::Value {
+                serde_json::json!({ "type": "object" })
+            }
+            fn visibility(&self) -> Visibility {
+                Visibility::Visible
+            }
+            async fn execute(&self, input: serde_json::Value) -> Result<ToolOutput> {
+                Ok(ToolOutput {
+                    text: input.to_string(),
+                    is_error: false,
+                })
+            }
+        }
+
+        let registry = StaticToolRegistry::new(vec![Box::new(EchoTool), Box::new(VisibleEcho)]);
+        let visible = registry.visible_definitions();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].name, "visible_echo");
     }
 }

@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use brain::tool::{Policy, Tool, ToolDefinition, ToolOutput};
+use brain::tool::{Policy, Tool, ToolDefinition, ToolOutput, Visibility};
 
 use crate::ExaConfig;
 
@@ -57,6 +57,10 @@ impl Tool for ExaWebSearch {
 
     fn policy(&self) -> Policy {
         Policy::Auto
+    }
+
+    fn visibility(&self) -> Visibility {
+        Visibility::Visible
     }
 
     async fn execute(&self, input: serde_json::Value) -> Result<ToolOutput> {

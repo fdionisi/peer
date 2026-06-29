@@ -149,7 +149,7 @@ impl Brain {
             .append_message(conversation_id, user_message)
             .await?;
 
-        let tool_defs = self.tools.definitions();
+        let tool_defs = self.tools.visible_definitions();
 
         let (tx, rx) = tokio::sync::mpsc::channel::<anyhow::Result<String>>(32);
 
